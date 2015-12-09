@@ -4,11 +4,22 @@
   :license {:name "Apache License 2.0"
             :url "http://www.apache.org/licenses/LICENSE-2.0"}
   :dependencies [
-    [org.clojure/clojure        "1.7.0" ]
-    [org.clojure/data.json      "0.2.6" ]
-    [com.basho.riak/riak-client "2.0.2" ]
+    [org.clojure/clojure        "1.7.0"   ]
+    [org.clojure/data.json      "0.2.6"   ]
+    [com.basho.riak/riak-client "2.0.2"   ]
+    [org.clojure/tools.logging  "0.3.1"   ]
+    [org.slf4j/slf4j-log4j12    "1.7.12"  ]
+    [log4j/log4j                "1.2.17"  ]
+    [org.clojure/core.async     "0.2.374" ]
   ]
-:profiles {
+  :exclusions [
+    javax.mail/mail
+    javax.jms/jms
+    com.sun.jdmk/jmxtools
+    com.sun.jmx/jmxri
+    jline/jline
+  ]
+  :profiles {
     :uberjar {
       :aot :all
     }
