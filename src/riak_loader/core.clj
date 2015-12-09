@@ -180,6 +180,7 @@
         ]
 
       ;; TEST
+      ;; (do (println "something") (exit 0))
       ;; END TEST
 
       ;; creating N threads to insert data into Riak
