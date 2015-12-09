@@ -20,7 +20,9 @@
     [clojure.java.io        :as   io    ]
     [clojure.data.json      :as   json  ]
     [clojure.string         :as   cstr  ]
+    [clojure.tools.cli      :as   cli   ]
     [clojure.tools.logging  :as   log   ]
+    [clojure.edn            :as   edn   ]
     [clojure.core.async     :refer 
       [alts! chan go thread timeout 
        >! >!! <! <!! go-loop]           ]
@@ -34,8 +36,40 @@
     [com.basho.riak.client.api.cap          Quorum                                ]
     [com.basho.riak.client.core.util        BinaryValue                           ]
     [java.net                               InetSocketAddress                     ]
+    [java.io                                File                                  ]
   )
   (:gen-class))
+
+(defn read-file
+  "Returns {:ok string } or {:error...}"
+  [^File file]
+  (try
+    (cond
+      (.isFile file)
+        {:ok (slurp file) }
+      :else
+        (throw (Exception. "Input is not a file")))
+  (catch Exception e
+    {:error "Exception" :fn "read-file" :exception (.getMessage e) })))
+
+(defn parse-edn-string
+  [s]
+  (try
+    {:ok (edn/read-string s)}
+  (catch Exception e
+    {:error "Exception" :fn "parse-config" :exception (.getMessage e)})))
+
+(defn read-config
+  [path]
+  (let
+    [ file-string (read-file (File. path)) ]
+    (cond
+      (contains? file-string :ok)
+        ;this return the {:ok} or {:error} from parse-edn-string
+        (parse-edn-string (file-string :ok))
+      :else
+        file-string)))
+
 
 (defn exit [n] 
     (log/info "init :: stop")
@@ -106,23 +140,47 @@
 (def non-blocking-producer >!)
 (def non-blocking-consumer <!)
 
+(def cli-options
+  ;; An option with a required argument
+  [
+  ["-c" "--config CONFIG" "Config file name"
+    :default "conf/app.edn"]
+  ["-f" "--file FILE" "File to process"
+    :default "/dev/null"]
+  ["-k" "--key KEY" "Key field in JSON"
+    :default "entity_id"]
+  ["-e" "--env ENV" "Environment (dev or prod)"
+    :default "dev"]
+  ["-h" "--help"]
+   ])
+
 (defn -main 
   [& args]
   (let [
-        lines           (lazy-lines "resources/patents1064.json")
+        {:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
+        config          (read-config (:config options))
+        env             (keyword (:env options))
+        bucket-type     (get-in config [:ok :env env :type])
+        bucket-name     (get-in config [:ok :env env :bucket])
+        json-key        (:key options)
+        _               (log/debug (str "config: " config))
+        lines           (lazy-lines (:file options))
         jsons           (map json/read-str lines)
         riak-cluster    (riak-connect2! 
-                          (list "172.31.21.56:10017" "172.31.21.55:10017" "172.31.21.54:10017"))
+                          (get-in config [:ok :env env :conn-string]))
         _               (.start riak-cluster)
         riak-client     (RiakClient. riak-cluster)
-        riak-bucket     (Namespace. "test_patents" "test_patents")
+        riak-bucket     (Namespace. bucket-type bucket-name)
         stat-chan       (chan)
         work-chan       (chan)
-        thread-count    16
-        thread-wait     1000
-        channel-timeout 5000
+        thread-count    (get-in config [:ok :env env :thread-count])
+        thread-wait     (get-in config [:ok :env env :thread-wait])
+        channel-timeout (get-in config [:ok :env env :channel-timeout])
 
         ]
+
+      ;; TEST
+      ;; END TEST
 
       ;; creating N threads to insert data into Riak
 
@@ -132,7 +190,7 @@
             (go-loop []
               (let [    doc         (blocking-consumer work-chan) 
                         start       (. System (nanoTime))
-                        riak-key    (Location. riak-bucket (get-in doc ["doc_number"]))
+                        riak-key    (Location. riak-bucket (get-in doc [json-key]))
                         riak-value  (BinaryValue/create 
                                       (json/write-str doc :escape-unicode false))
                         _           (riak-store! riak-client riak-bucket riak-key riak-value)
