@@ -78,7 +78,7 @@
 (defn riak-connect2!
   "Connecting to a Riak cluster"
   [host-port-list]
-  (let [  node-template (build-node-template (RiakNode$Builder.) 16 64) 
+  (let [  node-template (build-node-template (RiakNode$Builder.) 16 128) 
           nodes         (map #(build-node node-template (first %) (Integer. (second %)))
                           (map #(cstr/split % #":") host-port-list)) 
           cluster       (.build (RiakCluster$Builder. nodes))
@@ -112,13 +112,13 @@
         lines           (lazy-lines "resources/patents1064.json")
         jsons           (map json/read-str lines)
         riak-cluster    (riak-connect2! 
-                          (list "127.0.0.1:10017" "127.0.0.1:10027" "127.0.0.1:10037"))
+                          (list "172.31.21.56:10017" "172.31.21.55:10017" "172.31.21.54:10017"))
         _               (.start riak-cluster)
         riak-client     (RiakClient. riak-cluster)
-        riak-bucket     (Namespace. "test-patents" "test-patents")
+        riak-bucket     (Namespace. "test_patents" "test_patents")
         stat-chan       (chan)
         work-chan       (chan)
-        thread-count    4
+        thread-count    16
         thread-wait     1000
         channel-timeout 5000
 

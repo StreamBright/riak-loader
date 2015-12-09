@@ -25,7 +25,7 @@
     }
   }
   :jvm-opts [
-    "-Xms128m" "-Xmx256m" 
+    "-Xms128m" "-Xmx4000m" 
     "-server"  "-XX:+UseConcMarkSweepGC" 
     "-XX:+TieredCompilation" "-XX:+AggressiveOpts"
     ;"-Dcom.sun.management.jmxremote"
