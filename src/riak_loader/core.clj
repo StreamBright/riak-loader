@@ -109,16 +109,16 @@
 (defn -main 
   [& args]
   (let [
-        lines           (lazy-lines "resources/test.json")
+        lines           (lazy-lines "resources/patents1064.json")
         jsons           (map json/read-str lines)
         riak-cluster    (riak-connect2! 
                           (list "127.0.0.1:10017" "127.0.0.1:10027" "127.0.0.1:10037"))
         _               (.start riak-cluster)
         riak-client     (RiakClient. riak-cluster)
         riak-bucket     (Namespace. "test-patents" "test-patents")
-        stat-chan       (chan 32)
-        work-chan       (chan 32)
-        thread-count    128
+        stat-chan       (chan)
+        work-chan       (chan)
+        thread-count    4
         thread-wait     1000
         channel-timeout 5000
 
@@ -152,7 +152,9 @@
         (thread
           (Thread/sleep 100)
           (doseq [json-doc jsons]
-            (blocking-producer work-chan json-doc)))
+            (do 
+              (log/debug (get-in json-doc ["doc_number"]))
+              (blocking-producer work-chan json-doc))))
 
         ;; end of sending thread
 
@@ -162,8 +164,7 @@
             (go
               (let [[result source] (alts! [stat-chan (timeout channel-timeout)])]
                 (if (= source stat-chan)
-                  (do (println "szopki")
-                  (log/info result))
+                  (log/info result)
                   ;else - timeout 
                   (do 
                     (log/info "Channel timed out. Stopping...") 
