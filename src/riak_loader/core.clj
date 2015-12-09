@@ -154,6 +154,20 @@
   ["-h" "--help"]
    ])
 
+(defn update-stats 
+  "" 
+  [counter result start-time]
+  (do 
+    (swap! counter inc)
+    (cond (= (mod @counter 100) 0)
+      (do
+       (let [exec-time (with-precision 3
+                         (/ (- (. System (nanoTime)) @start-time) 1000000000.0))
+             _  (reset! start-time (. System (nanoTime)))
+
+	]
+        (log/info (str " res: " result " count: " @counter " perf: " (int (/ 100 exec-time)) " req/s" )))))))
+
 (defn -main 
   [& args]
   (let [
@@ -176,6 +190,8 @@
         thread-count    (get-in config [:ok :env env :thread-count])
         thread-wait     (get-in config [:ok :env env :thread-wait])
         channel-timeout (get-in config [:ok :env env :channel-timeout])
+	counter         (atom 0)
+        start-time      (atom (. System (nanoTime)))
 
         ]
 
@@ -221,9 +237,13 @@
         (while true 
           (blocking-consumer
             (go
-              (let [[result source] (alts! [stat-chan (timeout channel-timeout)])]
+              (let [
+                     [result source] (alts! [stat-chan (timeout channel-timeout)])
+                   ]
                 (if (= source stat-chan)
-                  (log/info result)
+		  (do 
+                    ;(log/debug result)
+		    (update-stats counter result start-time))
                   ;else - timeout 
                   (do 
                     (log/info "Channel timed out. Stopping...") 
