@@ -130,7 +130,7 @@
                           (.withOption 
                             (.withLocation 
                               (StoreValue$Builder. riak-object) riak-key) 
-                                StoreValue$Option/W  (Quorum. 2)))
+                                StoreValue$Option/N_VAL (Integer. 1)))
         exx             (.execute riak-client store)
       ]))
 
@@ -147,8 +147,8 @@
     :default "conf/app.edn"]
   ["-f" "--file FILE" "File to process"
     :default "/dev/null"]
-  ["-k" "--key KEY" "Key field in JSON"
-    :default "entity_id"]
+  ["-t" "--type TYPE" "Upload type (patents, cpcs, entities..)"
+    :default "patents"]
   ["-e" "--env ENV" "Environment (dev or prod)"
     :default "dev"]
   ["-h" "--help"]
@@ -173,11 +173,14 @@
   (let [
         {:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
         config          (read-config (:config options))
-        env             (keyword (:env options))
-        bucket-type     (get-in config [:ok :env env :type])
-        bucket-name     (get-in config [:ok :env env :bucket])
-        json-key        (:key options)
         _               (log/debug (str "config: " config))
+        env             (keyword (:env options))
+        bucket-type     (:type options) ;same as bucket-name
+        _               (log/debug (str "bucket-type: " bucket-type))
+        env             (keyword (:env options))
+        bucket-name     bucket-type
+        json-key        (get-in config [:ok :json-keys (keyword bucket-type)])
+        _               (log/debug (str "json-key: " json-key))
         lines           (lazy-lines (:file options))
         jsons           (map json/read-str lines)
         riak-cluster    (riak-connect2! 
@@ -206,14 +209,18 @@
           (Thread/sleep thread-wait)
             (go-loop []
               (let [    doc         (blocking-consumer work-chan) 
-                        start       (. System (nanoTime))
-                        riak-key    (Location. riak-bucket (get-in doc [json-key]))
+                        ;check if this is nil
+                        doc-key     (str (get-in doc [json-key]) ".json") 
+                        _           (log/debug (str "doc-key: " doc-key))
+                        riak-key    (Location. riak-bucket doc-key)
                         riak-value  (BinaryValue/create 
                                       (json/write-str doc :escape-unicode false))
+                        start       (. System (nanoTime))
+                        ; check if this returns an error
+                        _           (log/debug (str riak-client riak-bucket riak-key "riak-value"))
                         _           (riak-store! riak-client riak-bucket riak-key riak-value)
                         exec-time   (with-precision 3 
-                                      (/ (- (. System (nanoTime)) start) 1000000.0))
-                   ]
+                                      (/ (- (. System (nanoTime)) start) 1000000.0)) ]
                   ;; send results to stat-chan
                   (blocking-producer 
                     stat-chan 
@@ -228,7 +235,7 @@
           (Thread/sleep 100)
           (doseq [json-doc jsons]
             (do 
-              (log/debug (get-in json-doc ["doc_number"]))
+              (log/debug (get-in json-doc [json-key]))
               (blocking-producer work-chan json-doc))))
 
         ;; end of sending thread

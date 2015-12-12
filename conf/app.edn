@@ -1,15 +1,16 @@
 { 
-
+  :json-keys {
+    :patents  "doc_number"
+    :entities "entity_id"
+  }
   :env {
     :dev {
-      :min-conn 5
-      :max-conn 10
+      :min-conn 10
+      :max-conn 15
       :conn-string ("127.0.0.1:10017" "127.0.0.1:10027" "127.0.0.1:10037")
-      :thread-count 2
+      :thread-count 6
       :thread-wait 1000
       :channel-timeout 5000
-      :type "entities"
-      :bucket "entities"
     }
     :prod {
       :min-conn 16
@@ -18,8 +19,6 @@
       :thread-count 32
       :thread-wait 5000
       :channel-timeout 10000
-      :type "entities"
-      :bucket "entities"
     }
   }
 };end
