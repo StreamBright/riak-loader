@@ -1,8 +1,12 @@
 { 
   :json-keys {
-    :patents  "doc_number"
-    :entities "entity_id"
+    :cpcs             ("a")
+    :entities         ("entity_id")
+    :entities_patents ("entity_id" "doc_number")
+    :ipcs             ("a")
+    :patents          ("doc_number")
   }
+  :key-extension ".json"
   :env {
     :dev {
       :min-conn 10

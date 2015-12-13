@@ -155,18 +155,26 @@
    ])
 
 (defn update-stats 
-  "" 
+  "Todo: add p50, p90, p99 with set atom" 
   [counter result start-time]
+  ;might not need do here, return {:ok :ok}
   (do 
     (swap! counter inc)
     (cond (= (mod @counter 100) 0)
       (do
-       (let [exec-time (with-precision 3
+        (let [ exec-time (with-precision 3
                          (/ (- (. System (nanoTime)) @start-time) 1000000000.0))
-             _  (reset! start-time (. System (nanoTime)))
+              _  (reset! start-time (. System (nanoTime))) ]
+        ;log stats
+        (log/info (str " res: " result " count: " @counter 
+                       " perf: " (int (/ 100 exec-time)) 
+                       " req/s" )))))))
 
-	]
-        (log/info (str " res: " result " count: " @counter " perf: " (int (/ 100 exec-time)) " req/s" )))))))
+(defn get-doc-key 
+  "Returns a Riak doc key string, example: xyz.json" 
+  [json-key doc]
+  (let [json-keys (map #(get-in doc [ % ]) json-key)]
+    (str (clojure.string/join "_" json-keys) ".json")))
 
 (defn -main 
   [& args]
@@ -193,7 +201,7 @@
         thread-count    (get-in config [:ok :env env :thread-count])
         thread-wait     (get-in config [:ok :env env :thread-wait])
         channel-timeout (get-in config [:ok :env env :channel-timeout])
-	counter         (atom 0)
+	      counter         (atom 0)
         start-time      (atom (. System (nanoTime)))
 
         ]
@@ -210,7 +218,7 @@
             (go-loop []
               (let [    doc         (blocking-consumer work-chan) 
                         ;check if this is nil
-                        doc-key     (str (get-in doc [json-key]) ".json") 
+                        doc-key     (get-doc-key json-key doc) 
                         _           (log/debug (str "doc-key: " doc-key))
                         riak-key    (Location. riak-bucket doc-key)
                         riak-value  (BinaryValue/create 
@@ -244,18 +252,16 @@
         (while true 
           (blocking-consumer
             (go
-              (let [
-                     [result source] (alts! [stat-chan (timeout channel-timeout)])
-                   ]
+              (let [ [result source] (alts! [stat-chan (timeout channel-timeout)]) ]
                 (if (= source stat-chan)
-		  (do 
+		              (do 
                     ;(log/debug result)
-		    (update-stats counter result start-time))
+		                (update-stats counter result start-time))
                   ;else - timeout 
-                  (do 
-                    (log/info "Channel timed out. Stopping...") 
+                    (do 
+                      (log/info "Channel timed out. Stopping...") 
                     ;;shutdown riak
-                    (exit 0)))))))
+                      (exit 0)))))))
     ;;END
     ))
 
