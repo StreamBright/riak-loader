@@ -125,7 +125,7 @@
   [riak-client riak-bucket riak-key riak-value]
   (let [
         riak-object     (RiakObject.)
-        _               (.setValue riak-object riak-value)
+        _               (.setValue (.setContentType riak-object "application/json") riak-value)
         store           (.build 
                           (.withOption 
                             (.withLocation 
