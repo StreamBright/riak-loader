@@ -14,7 +14,7 @@
 ;; limitations under the License.
 
 (ns ^{  :doc "Loading data into Riak"
-        :author "Istvan Szukacs"}
+        :author "Istvan Szukacs"  }
   riak-loader.core
   (:require 
     [clojure.java.io        :as   io    ]
@@ -23,6 +23,7 @@
     [clojure.tools.cli      :as   cli   ]
     [clojure.tools.logging  :as   log   ]
     [clojure.edn            :as   edn   ]
+    [cheshire.core          :as   ches  ]
     [clojure.core.async     :refer 
       [alts! chan go thread timeout 
        >! >!! <! <!! go-loop]           ]
@@ -132,7 +133,8 @@
                               (StoreValue$Builder. riak-object) riak-key) 
                                 StoreValue$Option/N_VAL (Integer. 1)))
         exx             (.execute riak-client store)
-      ]))
+      ]
+    {:ok :ok}))
 
 (def blocking-producer >!!)
 (def blocking-consumer <!!)
@@ -190,9 +192,7 @@
         json-key        (get-in config [:ok :json-keys (keyword bucket-type)])
         _               (log/debug (str "json-key: " json-key))
         lines           (lazy-lines (:file options))
-        ;;              mem leak?
-        jsons           (map json/read-str lines)
-        ;;              mem leak?
+        json-hmps       (map ches/parse-string lines)
         riak-cluster    (riak-connect2! 
                           (get-in config [:ok :env env :conn-string]))
         _               (.start riak-cluster)
@@ -223,13 +223,12 @@
                         doc-key     (get-doc-key json-key doc) 
                         _           (log/debug (str "doc-key: " doc-key))
                         riak-key    (Location. riak-bucket doc-key)
-                        riak-value  (BinaryValue/create 
-                                      ;; mem leak?
-                                      (json/write-str doc :escape-unicode false))
-                                      ;; mem leak ?
+                        json-byte   (.getBytes (ches/generate-string doc))
+                        riak-value  (BinaryValue/unsafeCreate json-byte)
                         start       (. System (nanoTime))
                         ; check if this returns an error
                         _           (log/debug (str riak-client riak-bucket riak-key "riak-value"))
+                        ;returns {:ok ...} || {:err ...} could be checked
                         _           (riak-store! riak-client riak-bucket riak-key riak-value)
                         exec-time   (with-precision 3 
                                       (/ (- (. System (nanoTime)) start) 1000000.0)) ]
@@ -245,7 +244,7 @@
 
         (thread
           (Thread/sleep 100)
-          (doseq [json-doc jsons]
+          (doseq [json-doc json-hmps]
             (blocking-producer work-chan json-doc)))
 
         ;; end of sending thread
