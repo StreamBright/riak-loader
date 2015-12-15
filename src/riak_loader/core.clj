@@ -190,7 +190,9 @@
         json-key        (get-in config [:ok :json-keys (keyword bucket-type)])
         _               (log/debug (str "json-key: " json-key))
         lines           (lazy-lines (:file options))
+        ;;              mem leak?
         jsons           (map json/read-str lines)
+        ;;              mem leak?
         riak-cluster    (riak-connect2! 
                           (get-in config [:ok :env env :conn-string]))
         _               (.start riak-cluster)
@@ -222,7 +224,9 @@
                         _           (log/debug (str "doc-key: " doc-key))
                         riak-key    (Location. riak-bucket doc-key)
                         riak-value  (BinaryValue/create 
+                                      ;; mem leak?
                                       (json/write-str doc :escape-unicode false))
+                                      ;; mem leak ?
                         start       (. System (nanoTime))
                         ; check if this returns an error
                         _           (log/debug (str riak-client riak-bucket riak-key "riak-value"))
@@ -242,9 +246,7 @@
         (thread
           (Thread/sleep 100)
           (doseq [json-doc jsons]
-            (do 
-              (log/debug (get-in json-doc [json-key]))
-              (blocking-producer work-chan json-doc))))
+            (blocking-producer work-chan json-doc)))
 
         ;; end of sending thread
 
