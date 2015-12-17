@@ -18,7 +18,6 @@
   riak-loader.core
   (:require 
     [clojure.java.io        :as   io    ]
-    [clojure.data.json      :as   json  ]
     [clojure.string         :as   cstr  ]
     [clojure.tools.cli      :as   cli   ]
     [clojure.tools.logging  :as   log   ]
@@ -192,7 +191,6 @@
         json-key        (get-in config [:ok :json-keys (keyword bucket-type)])
         _               (log/debug (str "json-key: " json-key))
         lines           (lazy-lines (:file options))
-        json-hmps       (map ches/parse-string lines)
         riak-cluster    (riak-connect2! 
                           (get-in config [:ok :env env :conn-string]))
         _               (.start riak-cluster)
@@ -217,13 +215,13 @@
       (dotimes [i thread-count]
         (thread
           (Thread/sleep thread-wait)
-            (go-loop []
-              (let [    doc         (blocking-consumer work-chan) 
+            (while true
+              (let [    json-str    (blocking-consumer work-chan) 
                         ;check if this is nil
-                        doc-key     (get-doc-key json-key doc) 
-                        _           (log/debug (str "doc-key: " doc-key))
+                        doc-clj     (ches/parse-string json-str)
+                        doc-key     (get-doc-key json-key doc-clj) 
                         riak-key    (Location. riak-bucket doc-key)
-                        json-byte   (.getBytes (ches/generate-string doc))
+                        json-byte   (.getBytes json-str)
                         riak-value  (BinaryValue/unsafeCreate json-byte)
                         start       (. System (nanoTime))
                         ; check if this returns an error
@@ -235,8 +233,7 @@
                   ;; send results to stat-chan
                   (blocking-producer 
                     stat-chan 
-                    {:thread-name (.getName (Thread/currentThread)) :time exec-time})
-                  (recur)))))
+                    {:thread-name (.getName (Thread/currentThread)) :time exec-time})))))
 
         ;; end of creating worker threads
         
@@ -244,8 +241,8 @@
 
         (thread
           (Thread/sleep 100)
-          (doseq [json-doc json-hmps]
-            (blocking-producer work-chan json-doc)))
+          (doseq [line lines]
+            (blocking-producer work-chan line)))
 
         ;; end of sending thread
 

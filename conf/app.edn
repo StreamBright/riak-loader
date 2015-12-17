@@ -3,7 +3,7 @@
     :cpcs             ("a")
     :entities         ("entity_id")
     :entities_patents ("entity_id" "doc_number")
-    :ipcs             ("a")
+    :ipcs             ("doc_number" "section" "class" "subclass" "main-group" "subgroup")
     :patents          ("doc_number")
   }
   :key-extension ".json"

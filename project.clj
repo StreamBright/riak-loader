@@ -5,9 +5,6 @@
             :url "http://www.apache.org/licenses/LICENSE-2.0"}
   :dependencies [
     [org.clojure/clojure        "1.7.0"   ]
-    ;; mem leak?
-    [org.clojure/data.json      "0.2.6"   ]
-    ;; mem leak?
     [cheshire                   "5.5.0"   ]
     [org.clojure/tools.cli      "0.3.3"   ]
     [com.basho.riak/riak-client "2.0.2"   ]
