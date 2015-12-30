@@ -42,6 +42,7 @@ java \
 #### Todo
 
 * checking command line parameters 
+* split functionality into separate files
 
 ## License
 
