@@ -161,14 +161,14 @@
   ;might not need do here, return {:ok :ok}
   (do 
     (swap! counter inc)
-    (cond (= (mod @counter 100) 0)
+    (cond (= (mod @counter 10000) 0)
       (do
         (let [ exec-time (with-precision 3
                          (/ (- (. System (nanoTime)) @start-time) 1000000000.0))
               _  (reset! start-time (. System (nanoTime))) ]
         ;log stats
         (log/info (str " res: " result " count: " @counter 
-                       " perf: " (int (/ 100 exec-time)) 
+                       " perf: " (int (/ 10000 exec-time)) 
                        " req/s" )))))))
 
 (defn get-doc-key 
@@ -176,6 +176,19 @@
   [json-key doc]
   (let [json-keys (map #(get-in doc [ % ]) json-key)]
     (str (clojure.string/join "_" json-keys) ".json")))
+
+(defn process-line 
+  "Takes a line and inserts it to Riak as JSON"
+  [line json-key riak-client riak-bucket stat-chan]
+  (let [    doc-clj     (ches/parse-string line)
+            doc-key     (get-doc-key json-key doc-clj) 
+            riak-key    (Location. riak-bucket doc-key)
+            json-byte   (.getBytes line)
+            riak-value  (BinaryValue/unsafeCreate json-byte)
+            _           (log/debug (str riak-client riak-bucket riak-key "riak-value"))
+            ;returns {:ok ...} || {:err ...} could be checked
+            _           (riak-store! riak-client riak-bucket riak-key riak-value)]
+    {:ok :ok}))
 
 (defn -main 
   [& args]
@@ -203,7 +216,6 @@
         channel-timeout (get-in config [:ok :env env :channel-timeout])
 	      counter         (atom 0)
         start-time      (atom (. System (nanoTime)))
-
         ]
 
       ;; TEST
@@ -216,24 +228,19 @@
         (thread
           (Thread/sleep thread-wait)
             (while true
-              (let [    json-str    (blocking-consumer work-chan) 
-                        ;check if this is nil
-                        doc-clj     (ches/parse-string json-str)
-                        doc-key     (get-doc-key json-key doc-clj) 
-                        riak-key    (Location. riak-bucket doc-key)
-                        json-byte   (.getBytes json-str)
-                        riak-value  (BinaryValue/unsafeCreate json-byte)
-                        start       (. System (nanoTime))
-                        ; check if this returns an error
-                        _           (log/debug (str riak-client riak-bucket riak-key "riak-value"))
-                        ;returns {:ok ...} || {:err ...} could be checked
-                        _           (riak-store! riak-client riak-bucket riak-key riak-value)
-                        exec-time   (with-precision 3 
-                                      (/ (- (. System (nanoTime)) start) 1000000.0)) ]
-                  ;; send results to stat-chan
-                  (blocking-producer 
-                    stat-chan 
-                    {:thread-name (.getName (Thread/currentThread)) :time exec-time})))))
+              ;; this should be moves to a function and only the time measurement should be here
+              ;; start
+              ;; call into the function
+              ;; stop
+              (let [  line        (blocking-consumer work-chan)
+                      start       (. System (nanoTime))
+                      _           (process-line line json-key riak-client riak-bucket)
+                      exec-time   (with-precision 3 
+                                    (/ (- (. System (nanoTime)) start) 1000000.0)) ]
+                (blocking-producer 
+                  stat-chan 
+                  {:thread-name (.getName (Thread/currentThread)) :time exec-time})))))
+                
 
         ;; end of creating worker threads
         
@@ -259,6 +266,7 @@
                     (do 
                       (log/info "Channel timed out. Stopping...") 
                     ;;shutdown riak
+                      (.shutdown riak-cluster)
                       (exit 0)))))))
     ;;END
     ))

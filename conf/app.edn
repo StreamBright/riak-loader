@@ -1,6 +1,6 @@
 { 
   :json-keys {
-    :cpcs             ("a")
+    :cpcs             ("doc_number" "section" "class" "subclass" "main-group" "subgroup")
     :entities         ("entity_id")
     :entities_patents ("entity_id" "doc_number")
     :ipcs             ("doc_number" "section" "class" "subclass" "main-group" "subgroup")
@@ -18,7 +18,7 @@
     }
     :prod {
       :min-conn 16
-      :max-conn 128
+      :max-conn 64
       :conn-string ("172.31.21.56:10017" "172.31.21.55:10017" "172.31.21.54:10017")
       :thread-count 32
       :thread-wait 5000
