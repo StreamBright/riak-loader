@@ -1,5 +1,4 @@
-;; Copyright 2015 StreamBright LLC
-;; Copyright 2015 Istvan Szukacs <istvan@streambrightdata.com>
+;; Copyright 2015 StreamBright LLC and contributors
 
 ;; Licensed under the Apache License, Version 2.0 (the "License");
 ;; you may not use this file except in compliance with the License.

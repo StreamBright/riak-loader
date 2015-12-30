@@ -1,21 +1,50 @@
 # riak-loader
 
+Riak-loader is loading huge amount of JSON entries into Riak. The source of data can be JSON files on disk (1 entry per line, see example below). Each JSON file has its on key in the data and the key is essembled at insertion time.
 
 ## Usage
 
+### Building a JAR
+
+I like to run the loder as a standalone jar.
+
+````bash
+$ lein uberjar
+Compiling riak-loader.core
+Created ...riak-loader/target/riak-loader-0.1.0.jar
+Created ...riak-loader/target/riak-loader-0.1.0-standalone.jar
+```
+
+### Running it
+
+#### Dev
+
+Configure the dev envinroment in the app.edn. 
+
+```bash
+$lein run -c conf/app.edn -f sample.json -e dev -t patents
+```
+
+#### Prod
+
+In prod the following script can be used: run.sh 
+
+```bash
+java \
+  -server -Xms512m \
+  -Xmx4096m \
+  -XX:+UseConcMarkSweepGC -XX:+TieredCompilation -XX:+AggressiveOpts \
+  -XX:+UnlockCommercialFeatures -XX:+FlightRecorder \
+  -XX:StartFlightRecording=defaultrecording=true,dumponexit=true,settings=riak_loader_profiling.jfc \
+  -jar target/riak-loader-0.1.0-standalone.jar -c app.edn -f huge.json -e prod -t type_of_data
+```
+
+#### Todo
+
+* checking command line parameters 
 
 ## License
 
-Copyright [2015] [StreamBright Data LLC and contributors]
+See LICENSE file in the repo.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
