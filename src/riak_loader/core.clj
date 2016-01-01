@@ -22,6 +22,7 @@
     [clojure.tools.logging  :as   log   ]
     [clojure.edn            :as   edn   ]
     [cheshire.core          :as   ches  ]
+    [abracad.avro           :as   avro  ]
     [clojure.core.async     :refer 
       [alts! chan go thread timeout 
        >! >!! <! <!! go-loop]           ]
@@ -35,13 +36,14 @@
     [com.basho.riak.client.api.cap          Quorum                                ]
     [com.basho.riak.client.core.util        BinaryValue                           ]
     [java.net                               InetSocketAddress                     ]
-    [java.io                                File                                  ]
+    [java.io                                File BufferedReader                   ]
+    [clojure.lang                           PersistentArrayMap                    ]
   )
   (:gen-class))
 
 (defn read-file
   "Returns {:ok string } or {:error...}"
-  [^File file]
+  ^PersistentArrayMap [^File file]
   (try
     (cond
       (.isFile file)
@@ -52,39 +54,58 @@
     {:error "Exception" :fn "read-file" :exception (.getMessage e) })))
 
 (defn parse-edn-string
-  [s]
+  "Returns {:ok {} } or {:error...}"
+  ^PersistentArrayMap [^String s]
   (try
     {:ok (edn/read-string s)}
   (catch Exception e
     {:error "Exception" :fn "parse-config" :exception (.getMessage e)})))
 
 (defn read-config
-  [path]
+  "Reads the configuration file (app.edn) and returns the config as a hashmap"
+  ^PersistentArrayMap [^String path]
   (let
     [ file-string (read-file (File. path)) ]
     (cond
       (contains? file-string :ok)
-        ;this return the {:ok} or {:error} from parse-edn-string
+        ;if the file read is successful the content is sent to parse-edn-string
+        ;that can return either and {:ok ...} or {:error ...}
         (parse-edn-string (file-string :ok))
       :else
+        ;keeping the original error and let it fall through
         file-string)))
 
-
-(defn exit [n] 
+(defn exit 
+  ([^Long n] 
     (log/info "init :: stop")
     (System/exit n))
+  ([^Long n ^String msg]
+    (log/info msg)
+    (log/info "init :: stop")
+    (System/exit n)))
 
-(defn lazy-helper
+;; AVRO
+
+(defn lazy-avro
+  "Returns a lazy sequence with the lines of an avro file"
+  [^String file]
+  (lazy-seq (avro/data-file-reader file)))
+
+;; JSON
+
+(defn- lazy-helper
     "Processes a java.io.Reader lazily"
-    [reader]
+    [^BufferedReader reader]
     (lazy-seq
           (if-let [line (.readLine reader)]
                   (cons line (lazy-helper reader))
                   (do (.close reader) nil))))
-(defn lazy-lines
-    "Return a lazy sequence with the lines of the file"
+(defn lazy-json
+    "Returns a lazy sequence with the lines of the file"
     [^String file]
     (lazy-helper (io/reader file)))
+
+;;
 
 (defn riak-connect!
   "Connecting a Riak cluster"
@@ -97,6 +118,7 @@
 (defn build-node-template
   "Budilgin Riak node template"
   [node-builder min-conn max-conn]
+  (log/info (type node-builder))
   (.withMaxConnections
     (.withMinConnections
       node-builder min-conn) max-conn))
@@ -151,6 +173,8 @@
     :default "patents"]
   ["-e" "--env ENV" "Environment (dev or prod)"
     :default "dev"]
+  ["-s" "--serialization SER" "JSON or Avro"
+    :default "json"]
   ["-h" "--help"]
    ])
 
@@ -176,33 +200,99 @@
   (let [json-keys (map #(get-in doc [ % ]) json-key)]
     (str (clojure.string/join "_" json-keys) ".json")))
 
-(defn process-line 
-  "Takes a line and inserts it to Riak as JSON"
-  [line json-key riak-client riak-bucket stat-chan]
-  (let [    doc-clj     (ches/parse-string line)
+
+(defn process-entry-avro
+  "Takes an Avro entry and insert it to Riak as JSON"
+  [entry json-key riak-client riak-bucket]
+
+  ;;fixme
+  (let [    doc-clj     (ches/parse-string entry)
+            doc-key     (get-doc-key json-key doc-clj)
+            riak-key    (Location. riak-bucket doc-key)
+            json-byte   (.getBytes entry)
+            riak-value  (BinaryValue/unsafeCreate json-byte)
+            _           (log/debug (str riak-client riak-bucket riak-key "riak-value"))
+            ;returns {:ok ...} || {:err ...} could be checked
+            _           (riak-store! riak-client riak-bucket riak-key riak-value)]
+    {:ok :ok}))
+  ;;fixme
+
+
+(defn process-entry-json
+  "Takes a line (JSON string) and inserts it to Riak as JSON"
+  [entry json-key riak-client riak-bucket]
+  (let [    doc-clj     (ches/parse-string entry)
             doc-key     (get-doc-key json-key doc-clj) 
             riak-key    (Location. riak-bucket doc-key)
-            json-byte   (.getBytes line)
+            json-byte   (.getBytes entry)
             riak-value  (BinaryValue/unsafeCreate json-byte)
             _           (log/debug (str riak-client riak-bucket riak-key "riak-value"))
             ;returns {:ok ...} || {:err ...} could be checked
             _           (riak-store! riak-client riak-bucket riak-key riak-value)]
     {:ok :ok}))
 
+(defn process-cli 
+  "Processing the cli arguments and options"
+  [args cli-options]
+  (let [
+          cli-options-parsed (cli/parse-opts args cli-options)
+          {:keys [options arguments errors summary]} cli-options-parsed
+        ]
+    (cond 
+      (:help options)
+        (exit 0)
+      errors
+        (exit 1)
+      :else
+        cli-options-parsed)))
+
+(defn process-config
+  "Processing config with error handling"
+  [file]
+  ; Handle help and error conditions
+  (let [config (read-config file)]
+    (cond
+      (or (empty? config) (:error config))
+        (exit 1 (str "Config cannot be read or parsed..." "\n" config))
+      :else
+        config)))
+
+(defn process-serialization-option
+  "Selecting serialization"
+  [serialization input-file]
+  (cond
+    (= serialization :avro)
+      {:seq (lazy-avro input-file) :proc process-entry-avro} 
+    (= serialization :json)
+      {:seq (lazy-json input-file) :proc process-entry-json}
+    :else
+      (do
+        (log/error (str "Unsupported serialization format: " serialization))
+        (exit 1))))
+
 (defn -main 
   [& args]
   (let [
-        {:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
-        config          (read-config (:config options))
-        _               (log/debug (str "config: " config))
-        env             (keyword (:env options))
-        bucket-type     (:type options) ;same as bucket-name
-        _               (log/debug (str "bucket-type: " bucket-type))
-        env             (keyword (:env options))
-        bucket-name     bucket-type
-        json-key        (get-in config [:ok :json-keys (keyword bucket-type)])
-        _               (log/debug (str "json-key: " json-key))
-        lines           (lazy-lines (:file options))
+        ;; dealing with cli & config file
+        cli-options-parsed                          (process-cli args cli-options)
+        {:keys [options arguments errors summary]}  cli-options-parsed
+        config                                      (process-config (:config options))
+
+        ;; wrapping out variables need for further execution
+        env               (keyword (:env options))
+        bucket-type       (:type options) ;same as bucket-name
+        _                 (log/debug (str "bucket-type: " bucket-type))
+        bucket-name       bucket-type
+        json-key          (get-in config [:ok :json-keys (keyword bucket-type)])
+        _                 (log/debug (str "json-key: " json-key))
+        ;; On success it returns a lazy sequence that has the entries to be processed
+        ;; and a matching processing function for that entry type
+        serialization     (keyword (:serialization options))
+        input-file        (:file options)
+        seq-and-proc      (process-serialization-option serialization input-file)
+        document-entries  (:seq seq-and-proc)
+        entry-processor   (:proc seq-and-proc)
+
         riak-cluster    (riak-connect2! 
                           (get-in config [:ok :env env :conn-string]))
         _               (.start riak-cluster)
@@ -231,9 +321,9 @@
               ;; start
               ;; call into the function
               ;; stop
-              (let [  line        (blocking-consumer work-chan)
+              (let [  entry       (blocking-consumer work-chan)
                       start       (. System (nanoTime))
-                      _           (process-line line json-key riak-client riak-bucket)
+                      _           (entry-processor entry json-key riak-client riak-bucket)
                       exec-time   (with-precision 3 
                                     (/ (- (. System (nanoTime)) start) 1000000.0)) ]
                 (blocking-producer 
@@ -247,8 +337,8 @@
 
         (thread
           (Thread/sleep 100)
-          (doseq [line lines]
-            (blocking-producer work-chan line)))
+          (doseq [entry document-entries]
+            (blocking-producer work-chan entry)))
 
         ;; end of sending thread
 

@@ -11,8 +11,8 @@
     :dev {
       :min-conn 10
       :max-conn 15
-      :conn-string ("127.0.0.1:10017" "127.0.0.1:10027" "127.0.0.1:10037")
-      :thread-count 6
+      :conn-string ("10.10.10.11:10017" "10.10.10.12:10017" "10.10.10.13:10017")
+      :thread-count 3
       :thread-wait 1000
       :channel-timeout 5000
     }

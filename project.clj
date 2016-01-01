@@ -5,6 +5,7 @@
             :url "http://www.apache.org/licenses/LICENSE-2.0"}
   :dependencies [
     [org.clojure/clojure        "1.7.0"   ]
+    [com.damballa/abracad       "0.4.13"  ]
     [cheshire                   "5.5.0"   ]
     [org.clojure/tools.cli      "0.3.3"   ]
     [com.basho.riak/riak-client "2.0.2"   ]
